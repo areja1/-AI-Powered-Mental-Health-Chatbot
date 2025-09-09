@@ -1,30 +1,31 @@
 import sys
 import os
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+import pathlib
+
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from flask_wtf.csrf import CSRFProtect, CSRFError
+from flask_wtf.csrf import CSRFProtect, CSRFError, generate_csrf
 from flask_login import (
     LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 )
-import pathlib
 from flask_bcrypt import Bcrypt
 from dotenv import load_dotenv
-from flask_wtf.csrf import CSRFProtect, generate_csrf
 
 # ---------- OpenAI (v1.x) ----------
-# Use the modern client interface. Make sure your requirements have: openai>=1.40.0
+# Make sure requirements include: openai>=1.40.0
 from openai import OpenAI, APIConnectionError, APIStatusError, AuthenticationError
 
-# ---- Security: CSRF, secure cookies, headers ----
-# Cookie flags (set SESSION_COOKIE_SECURE=1 in production)
+# Load .env BEFORE reading any environment variables
+load_dotenv()
+
+# ---- App + security flags ----
 app = Flask(__name__, template_folder="templates", static_folder="static")
+
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 INSTANCE_DIR = BASE_DIR / "instance"
 INSTANCE_DIR.mkdir(exist_ok=True)
 
-db_url = os.getenv("DATABASE_URL")
-if db_url and db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+# Cookie flags (set SESSION_COOKIE_SECURE=1 in production)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["REMEMBER_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -32,22 +33,25 @@ app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "0") == "1"
 app.config["REMEMBER_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "0") == "1"
 
-# --- config (production-safe defaults & DB url normalization) ---
+# --- Config (production-safe defaults & DB url normalization) ---
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-not-secure")
 app.config["WTF_CSRF_TIME_LIMIT"] = None  # avoid token expiry during quick tests
-
-BASE_DIR = pathlib.Path(__file__).resolve().parent
-INSTANCE_DIR = BASE_DIR / "instance"
-INSTANCE_DIR.mkdir(exist_ok=True)
+app.config["WTF_CSRF_SSL_STRICT"] = False  # don't require HTTPS Referer header (token still validated)
+app.config["WTF_CSRF_TRUSTED_ORIGINS"] = [
+    "ai-powered-mental-health-chatbot.onrender.com",
+    "localhost",
+    "127.0.0.1",
+]
 
 db_url = os.getenv("DATABASE_URL")
 if db_url and db_url.startswith("postgres://"):
     # SQLAlchemy expects "postgresql://"
     db_url = db_url.replace("postgres://", "postgresql://", 1)
+
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url or f"sqlite:///{(INSTANCE_DIR / 'users.db').as_posix()}"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# CSRF protection for all POST/PUT/PATCH/DELETE
+# CSRF for all unsafe methods
 csrf = CSRFProtect(app)
 
 # Make {{ csrf_token() }} available in templates without FlaskForm
@@ -55,48 +59,13 @@ csrf = CSRFProtect(app)
 def inject_csrf():
     return {"csrf_token": generate_csrf}
 
-# Load environment variables from .env
-load_dotenv()
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    raise ValueError(
-        "The OpenAI API key was not found. Set OPENAI_API_KEY in your .env file."
-    )
-
-# Initialize OpenAI client
-client = OpenAI(api_key=OPENAI_API_KEY)
-
-def _run_tests_before_server():
-    """
-    Discover and run tests from ./tests or ./test using unittest.
-    Prints PASS/FAIL to console. Returns True if all pass, else False.
-    """
-    import unittest, sys, os
-    print("\n================= Running test suite =================")
-    root_dir = os.path.dirname(os.path.abspath(__file__))
-    # ensure discovery runs relative to project root
-    os.chdir(root_dir)
-    # support either folder name
-    candidates = ["tests", "test"]
-    start = next((c for c in candidates if os.path.isdir(os.path.join(root_dir, c))), None)
-    if not start:
-        print(f"No tests/ or test/ directory found at: {root_dir} — skipping tests.")
-        print("======================================================\n")
-        return True
-    # Call discover WITHOUT top_level_dir so 'tests' doesn't need to be a package
-    suite = unittest.defaultTestLoader.discover(start_dir=start, pattern="test_*.py")
-    result = unittest.TextTestRunner(stream=sys.stdout, verbosity=2).run(suite)
-    print("======================================================\n")
-    return result.wasSuccessful()
-
-# ---------- Flask App Setup ----------
 # Security headers (basic, safe defaults)
 @app.after_request
 def set_security_headers(resp):
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
-    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    # Allow same-origin Referer so Flask-WTF can validate CSRF correctly
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     # Keep CSP simple; we serve only our own JS/CSS.
     resp.headers.setdefault(
         "Content-Security-Policy",
@@ -113,20 +82,18 @@ def set_security_headers(resp):
         resp.headers["Expires"] = "0"
     return resp
 
+# Error handler for nice logs on CSRF failures
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    app.logger.error(f"CSRF error: {e.description}")
+    return render_template("login.html", error=e.description), 400
+
 # Extensions
-csrf = CSRFProtect(app)
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
-
-@app.errorhandler(CSRFError)
-def handle_csrf_error(e):
-    # This will show the exact reason in Render logs and return a clean 400
-    app.logger.error(f"CSRF error: {e.description}")
-    return render_template("login.html", error=e.description), 400
-
 
 # ---------- Database Models ----------
 class User(db.Model, UserMixin):
@@ -135,17 +102,20 @@ class User(db.Model, UserMixin):
     email = db.Column(db.String(150), unique=True, nullable=False)
     password = db.Column(db.String(150), nullable=False)
 
-
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+# ---------- OpenAI client ----------
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise ValueError("The OpenAI API key was not found. Set OPENAI_API_KEY in your environment.")
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ---------- Routes ----------
 @app.route("/")
 def home():
     return redirect(url_for("login"))
-
 
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
@@ -153,6 +123,7 @@ def signup():
     # If already signed in, show an interstitial instead of redirecting
     if request.method == "GET" and current_user.is_authenticated:
         return render_template("signed_in_gate.html", user=current_user)
+
     if request.method == "POST":
         username = (request.form.get("username") or "").strip()
         email = (request.form.get("email") or "").strip().lower()
@@ -199,20 +170,20 @@ def signup():
         flash("Account created successfully!", "success")
         return redirect(url_for("login", registered=1))
 
-    # <-- IMPORTANT: Always return the template on GET
+    # Always return the template on GET
     return render_template("signup.html")
 
-# ---- Lightweight auth state probe for back/forward cache handling ----
+# Lightweight auth state probe for back/forward cache handling
 @app.get("/auth/state")
 def auth_state():
     return jsonify({"authenticated": bool(current_user.is_authenticated)})
-
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     # If already signed in, show an interstitial instead of redirecting
     if request.method == "GET" and current_user.is_authenticated:
         return render_template("signed_in_gate.html", user=current_user)
+
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
@@ -226,7 +197,6 @@ def login():
 
     return render_template("login.html")
 
-
 @app.route("/logout")
 @login_required
 def logout():
@@ -234,12 +204,10 @@ def logout():
     flash("Logged out successfully!", "info")
     return redirect(url_for("login"))
 
-
 @app.route("/chat", methods=["GET"])
 @login_required
 def chat():
     return render_template("chat.html", user=current_user)
-
 
 @app.route("/chatbot", methods=["POST"])
 @login_required
@@ -249,7 +217,7 @@ def chatbot():
     if not user_input:
         return jsonify({"reply": "I didn't receive any input.", "crisis": False})
 
-    # Crisis Keywords (simple substring checks)
+    # Crisis keywords (simple substring checks)
     CRISIS_KEYWORDS = ["suicide", "hurt myself", "kill myself", "depressed", "self-harm"]
     if any(kw in user_input.lower() for kw in CRISIS_KEYWORDS):
         crisis_response = (
@@ -262,9 +230,15 @@ def chatbot():
     try:
         # Modern OpenAI API call (v1.x)
         response = client.chat.completions.create(
-            model="gpt-4o",  # You can switch to "gpt-4o-mini" if you want a faster/cheaper model
+            model="gpt-4o",  # or "gpt-4o-mini" for faster/cheaper
             messages=[
-                {"role": "system", "content": "You are a supportive, empathetic mental health assistant. Offer gentle guidance and coping strategies, but do not provide medical diagnosis."},
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a supportive, empathetic mental health assistant. "
+                        "Offer gentle guidance and coping strategies, but do not provide medical diagnosis."
+                    ),
+                },
                 {"role": "user", "content": user_input},
             ],
             temperature=0.7,
@@ -286,14 +260,33 @@ def chatbot():
         print("Chatbot error:", repr(e))
         return jsonify({"reply": "Sorry, I’m having trouble processing that request right now.", "crisis": False}), 500
 
+# ---------------- Entry Point (local dev only) ----------------
+def _run_tests_before_server():
+    """
+    Discover and run tests from ./tests or ./test using unittest.
+    Prints PASS/FAIL to console. Returns True if all pass, else False.
+    """
+    import unittest
+    print("\n================= Running test suite =================")
+    root_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(root_dir)
+    candidates = ["tests", "test"]
+    start = next((c for c in candidates if os.path.isdir(os.path.join(root_dir, c))), None)
+    if not start:
+        print(f"No tests/ or test/ directory found at: {root_dir} — skipping tests.")
+        print("======================================================\n")
+        return True
+    suite = unittest.defaultTestLoader.discover(start_dir=start, pattern="test_*.py")
+    result = unittest.TextTestRunner(stream=sys.stdout, verbosity=2).run(suite)
+    print("======================================================\n")
+    return result.wasSuccessful()
 
-# ---------- Entry Point ----------
 if __name__ == "__main__":
     # Automatically run tests; skip with --skip-tests or SKIP_TESTS=1.
-    # Set RUN_TESTS_EVERY_START=1 to also run on the reloader child.
     skip = "--skip-tests" in sys.argv or os.getenv("SKIP_TESTS") == "1"
     is_reloader = os.getenv("WERKZEUG_RUN_MAIN") == "true"
     force_every_start = os.getenv("RUN_TESTS_EVERY_START") == "1"
+
     if skip:
         print("⚠️  Skipping tests (--skip-tests or SKIP_TESTS=1). Starting the server...\n")
     elif is_reloader and not force_every_start:
@@ -307,5 +300,6 @@ if __name__ == "__main__":
 
     with app.app_context():
         db.create_all()
-    # For local development; remove debug=True in production
+
+    # Local development server (use Gunicorn on Render)
     app.run(debug=True)
