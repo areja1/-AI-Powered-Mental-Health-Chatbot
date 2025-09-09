@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Chat</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
+  </head>
+  <body>
+    <div class="bg-scene">
+      <span class="bg-gradient"></span>
+      <span class="bg-blob a"></span>
+      <span class="bg-blob b"></span>
+      <span class="bg-blob c"></span>
+    </div>
+    <div class="toasts">
+      {% with messages = get_flashed_messages(with_categories=True) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="toast {{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+    </div>
+
+    <div class="chat-shell">
+      <div class="chat-card">
+        <div class="chat-header">
+          <div class="logo"><div class="logo-badge">MH</div> Mental Health Chatbot</div>
+          <div><a class="muted-link" href="{{ url_for('logout') }}">Logout</a></div>
+        </div>
+        <div id="stream" class="chat-stream" aria-live="polite"></div>
+        <form id="sendForm" class="chat-input">
+          <div class="control">
+            <input class="input" id="prompt" type="text" placeholder="Share what's on your mind..." autocomplete="off" required/>
+          </div>
+          <button class="btn" id="sendBtn" type="submit">Send</button>
+        </form>
+      </div>
+    </div>
+
+    <footer class="site-footer">
+      <div class="footer-line"></div>
+      <p class="footer-text">Developed by <strong>Abhinav Reja</strong></p>
+    </footer>
+
+    <script defer src="{{ url_for('static', filename='js/chat.js') }}"></script>
+  </body>
+  </html>

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Already signed in</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
+  </head>
+  <body>
+    <!-- Soothing global background -->
+    <div class="bg-scene">
+      <span class="bg-gradient"></span>
+      <span class="bg-blob a"></span>
+      <span class="bg-blob b"></span>
+      <span class="bg-blob c"></span>
+    </div>
+
+    <main class="auth-wrap">
+      <section class="card" role="dialog" aria-labelledby="gateTitle">
+        <div class="logo">
+          <div class="logo-badge">MH</div>
+          Mental Health Chatbot
+        </div>
+
+        <h1 id="gateTitle" class="title">You’re already signed in</h1>
+        <div class="glow"></div>
+        <p class="subtitle">Signed in as <strong>{{ user.username }}</strong>. Choose what you’d like to do:</p>
+
+        <div class="form" style="margin-top:12px">
+          <a class="btn" href="{{ url_for('chat') }}">Go to chat</a>
+          <a class="btn" href="{{ url_for('logout') }}" style="margin-top:10px">Log out to switch account</a>
+        </div>
+
+        <p class="subtitle" style="margin-top:14px">
+          For security, authentication pages are hidden while you’re signed in.
+        </p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-line"></div>
+      <p class="footer-text">developed by <strong>abhinav reja</strong></p>
+    </footer>
+  </body>
+</html>

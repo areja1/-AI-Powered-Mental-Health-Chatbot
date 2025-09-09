@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Sign up</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
+  </head>
+  <body>
+    <div class="bg-scene">
+      <span class="bg-gradient"></span>
+      <span class="bg-blob a"></span>
+      <span class="bg-blob b"></span>
+      <span class="bg-blob c"></span>
+    </div>
+
+    <!-- Flash toasts -->
+    <div class="toasts">
+      {% with messages = get_flashed_messages(with_categories=True) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="toast {{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+    </div>
+
+    <main class="auth-wrap">
+      <section class="card" role="dialog" aria-labelledby="signupTitle">
+        <div class="logo">
+          <div class="logo-badge">MH</div>
+          Mental Health Chatbot
+        </div>
+
+        <h1 id="signupTitle" class="title">Create your account</h1>
+        <div class="glow"></div>
+        <p class="subtitle">Join and start a supportive conversation.</p>
+
+        <form class="form" method="POST" action="{{ url_for('signup') }}" data-validate>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="field">
+            <label class="label" for="username">Username</label>
+            <div class="control">
+              <input
+                class="input"
+                id="username"
+                name="username"
+                type="text"
+                placeholder="yourname"
+                autocomplete="username"
+                required
+              />
+            </div>
+            <div class="error" data-error="username"></div>
+          </div>
+
+          <div class="field">
+            <label class="label" for="email">Email</label>
+            <div class="control">
+              <input
+                class="input"
+                id="email"
+                name="email"
+                type="email"
+                placeholder="you@example.com"
+                autocomplete="email"
+                required
+              />
+            </div>
+            <div class="error" data-error="email"></div>
+          </div>
+
+          <div class="field">
+            <label class="label" for="password">Password</label>
+            <div class="control">
+              <input
+                class="input"
+                id="password"
+                name="password"
+                type="password"
+                placeholder="••••••••"
+                autocomplete="new-password"
+                required
+              />
+              <button type="button" class="toggle" data-toggle="password" data-target="#password">Show</button>
+            </div>
+            <div class="hint">At least 8 characters.</div>
+            <div class="error" data-error="password"></div>
+          </div>
+
+          <div class="field">
+            <label class="label" for="confirm_password">Confirm password</label>
+            <div class="control">
+              <input
+                class="input"
+                id="confirm_password"
+                name="confirm_password"
+                type="password"
+                placeholder="••••••••"
+                autocomplete="new-password"
+                required
+              />
+              <button type="button" class="toggle" data-toggle="password" data-target="#confirm_password">Show</button>
+            </div>
+            <div class="error" data-error="confirm"></div>
+          </div>
+
+          <button class="btn" type="submit">Create account</button>
+        </form>
+
+        <p class="subtitle" style="margin-top:14px">
+          Already have an account? <a class="muted-link" href="{{ url_for('login') }}">Sign in</a>
+        </p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-line"></div>
+      <p class="footer-text">Developed by <strong>Abhinav Reja</strong></p>
+    </footer>
+
+    <script defer src="{{ url_for('static', filename='js/ui.js') }}"></script>
+  </body>
+</html>

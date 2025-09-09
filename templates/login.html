@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Login</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
+    <!-- keep your existing CSS if any, this just adds ui.css -->
+  </head>
+  <body>
+    <div class="bg-scene">
+      <span class="bg-gradient"></span>
+      <span class="bg-blob a"></span>
+      <span class="bg-blob b"></span>
+      <span class="bg-blob c"></span>
+    </div>
+    <div class="toasts">
+      {% with messages = get_flashed_messages(with_categories=True) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="toast {{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+    </div>
+
+    <main class="auth-wrap">
+      <section class="card" role="dialog" aria-labelledby="loginTitle">
+        <div class="logo">
+          <div class="logo-badge">MH</div>
+          Mental Health Chatbot
+        </div>
+        <h1 id="loginTitle" class="title">Welcome</h1>
+        <div class="glow"></div>
+        <p class="subtitle">Log in to fix your mental health.</p>
+
+        <form class="form" method="POST" action="{{ url_for('login') }}" data-validate>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="field">
+            <label class="label" for="email">Email</label>
+            <div class="control">
+              <input class="input" id="email" name="email" type="email" placeholder="you@example.com" autocomplete="email" required>
+            </div>
+            <div class="error" data-error="email"></div>
+          </div>
+
+          <div class="field">
+            <label class="label" for="password">Password</label>
+            <div class="control">
+              <input class="input" id="password" name="password" type="password" placeholder="••••••••" autocomplete="current-password" required>
+              <button type="button" class="toggle" data-toggle="password" data-target="#password">Show</button>
+            </div>
+            <div class="hint">Use at least 8 characters.</div>
+            <div class="error" data-error="password"></div>
+          </div>
+
+          <button class="btn" type="submit">Sign in</button>
+        </form>
+
+        <p class="subtitle" style="margin-top:14px">
+          New here? <a class="muted-link" href="{{ url_for('signup') }}">Create an account</a>
+        </p>
+      </section>
+    </main>
+
+     <footer class="site-footer">
+      <div class="footer-line"></div>
+      <p class="footer-text">Developed by <strong>Abhinav Reja</strong></p>
+    </footer>
+
+    <!-- Success modal (appears after signup) -->
+    <div class="modal" id="modal" aria-hidden="true" role="dialog" aria-labelledby="mTitle">
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-card">
+        <h2 id="mTitle">Account created successfully 🎉</h2>
+        <p class="subtitle" style="margin-top:4px">You can now sign in with your new credentials.</p>
+        <div class="modal-actions">
+          <button class="btn" data-close autofocus>Continue to Sign in</button>
+        </div>
+      </div>
+    </div>
+
+    <script defer src="{{ url_for('static', filename='js/ui.js') }}"></script>
+  </body>
+</html>
