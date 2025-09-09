@@ -1,7 +1,8 @@
 import sys
 import os
-from flask import Flask, render_template, redirect, url_for, request, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
+from flask_wtf.csrf import CSRFProtect, CSRFError
 from flask_login import (
     LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 )
@@ -24,19 +25,27 @@ INSTANCE_DIR.mkdir(exist_ok=True)
 db_url = os.getenv("DATABASE_URL")
 if db_url and db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
-
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
-    "DATABASE_URL",
-    f"sqlite:///{INSTANCE_DIR.as_posix()}/users.db"
-)
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "mysecretkey")
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["REMEMBER_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "0") == "1"
 app.config["REMEMBER_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "0") == "1"
+
+# --- config (production-safe defaults & DB url normalization) ---
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-not-secure")
+app.config["WTF_CSRF_TIME_LIMIT"] = None  # avoid token expiry during quick tests
+
+BASE_DIR = pathlib.Path(__file__).resolve().parent
+INSTANCE_DIR = BASE_DIR / "instance"
+INSTANCE_DIR.mkdir(exist_ok=True)
+
+db_url = os.getenv("DATABASE_URL")
+if db_url and db_url.startswith("postgres://"):
+    # SQLAlchemy expects "postgresql://"
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+app.config["SQLALCHEMY_DATABASE_URI"] = db_url or f"sqlite:///{(INSTANCE_DIR / 'users.db').as_posix()}"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # CSRF protection for all POST/PUT/PATCH/DELETE
 csrf = CSRFProtect(app)
@@ -105,11 +114,18 @@ def set_security_headers(resp):
     return resp
 
 # Extensions
+csrf = CSRFProtect(app)
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    # This will show the exact reason in Render logs and return a clean 400
+    app.logger.error(f"CSRF error: {e.description}")
+    return render_template("login.html", error=e.description), 400
 
 
 # ---------- Database Models ----------
