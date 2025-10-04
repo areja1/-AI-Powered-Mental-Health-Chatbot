@@ -45,6 +45,9 @@ app.config["WTF_CSRF_TRUSTED_ORIGINS"] = [
     "ai-powered-mental-health-chatbot.onrender.com",
     "localhost",
     "127.0.0.1",
+    # --- Vercel domains (add both the project domain and wildcard) ---
+    "ai-powered-mental-health-chatbot.vercel.app",
+    ".vercel.app",
 ]
 
 db_url = os.getenv("DATABASE_URL")
