@@ -24,8 +24,12 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 INSTANCE_DIR = BASE_DIR / "instance"
 
-if os.getenv("VERCEL") != "1":
+# Try to make ./instance, but don't crash on read-only filesystems (e.g., Vercel)
+try:
     INSTANCE_DIR.mkdir(exist_ok=True)
+except OSError:
+    # Read-only FS is fine; we'll pick /tmp for SQLite below
+    pass
 
 # Cookie flags (set SESSION_COOKIE_SECURE=1 in production)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -47,26 +51,37 @@ app.config["WTF_CSRF_TRUSTED_ORIGINS"] = [
     "ai-powered-mental-health-chatbot.onrender.com",
     "localhost",
     "127.0.0.1",
+    # Vercel production domain (your real URL)
     "ai-powered-mental-health-chatbot-sl.vercel.app",
+    # Wildcard for Vercel preview deployment domains
     ".vercel.app",
 ]
+
+def _choose_sqlite_uri() -> str:
+    """
+    Choose a writable SQLite URI:
+    - Prefer ./instance when writable
+    - Otherwise use /tmp/users.db (always writable in serverless)
+    """
+    try:
+        # Attempt to write a tiny probe file to ./instance
+        probe = INSTANCE_DIR / ".__wtest"
+        with open(probe, "w") as f:
+            f.write("x")
+        probe.unlink(missing_ok=True)
+        return f"sqlite:///{(INSTANCE_DIR / 'users.db').as_posix()}"
+    except Exception:
+        return "sqlite:////tmp/users.db"
 
 db_url = os.getenv("DATABASE_URL")
 if db_url and db_url.startswith("postgres://"):
     # SQLAlchemy expects "postgresql://"
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-# On Vercel, deployment FS is read-only; only /tmp is writable.
-# If no DATABASE_URL is provided, use SQLite in /tmp.
-if not db_url:
-    if os.getenv("VERCEL") == "1":
-        sqlite_uri = "sqlite:////tmp/users.db"
-    else:
-        sqlite_uri = f"sqlite:///{(INSTANCE_DIR / 'users.db').as_posix()}"
-    app.config["SQLALCHEMY_DATABASE_URI"] = sqlite_uri
-else:
-    app.config["SQLALCHEMY_DATABASE_URI"] = db_url
-
+# Decide DB URI:
+# 1) If DATABASE_URL present -> use it.
+# 2) Else, select a writable SQLite path (./instance or /tmp).
+app.config["SQLALCHEMY_DATABASE_URI"] = db_url or _choose_sqlite_uri()
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # CSRF for all unsafe methods
