@@ -52,7 +52,17 @@ if db_url and db_url.startswith("postgres://"):
     # SQLAlchemy expects "postgresql://"
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-app.config["SQLALCHEMY_DATABASE_URI"] = db_url or f"sqlite:///{(INSTANCE_DIR / 'users.db').as_posix()}"
+# On Vercel, deployment FS is read-only; only /tmp is writable.
+# If no DATABASE_URL is provided, use SQLite in /tmp.
+if not db_url:
+    if os.getenv("VERCEL") == "1":
+        sqlite_uri = "sqlite:////tmp/users.db"
+    else:
+        sqlite_uri = f"sqlite:///{(INSTANCE_DIR / 'users.db').as_posix()}"
+    app.config["SQLALCHEMY_DATABASE_URI"] = sqlite_uri
+else:
+    app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # CSRF for all unsafe methods
