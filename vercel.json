@@ -1,7 +1,8 @@
 {
+  "version": 2,
   "functions": {
     "api/index.py": {
-      "runtime": "vercel-python@3.11",
+      "runtime": "python3.11",
       "memory": 512,
       "maxDuration": 10
     }
