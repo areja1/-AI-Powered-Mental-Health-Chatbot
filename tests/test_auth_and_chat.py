@@ -1,7 +1,14 @@
-import unittest
 import types
 import re
 from unittest.mock import patch
+import os
+import unittest
+
+# Ensure imports don't fail if CI forgot envs
+os.environ.setdefault("TESTING", "1")
+os.environ.setdefault("OPENAI_API_KEY", "dummy")
+
+from app import app, db, User, bcrypt
 
 from app import app, db, User, bcrypt
 

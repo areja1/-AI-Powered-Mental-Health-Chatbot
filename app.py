@@ -23,7 +23,13 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 INSTANCE_DIR = BASE_DIR / "instance"
-INSTANCE_DIR.mkdir(exist_ok=True)
+
+# Try to make ./instance, but don't crash on read-only filesystems (e.g., Vercel)
+try:
+    INSTANCE_DIR.mkdir(exist_ok=True)
+except OSError:
+    # Read-only FS is fine; we'll pick /tmp for SQLite below
+    pass
 
 # Cookie flags (set SESSION_COOKIE_SECURE=1 in production)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -33,6 +39,10 @@ app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "0") == "1"
 app.config["REMEMBER_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "0") == "1"
 
+# --- Testing mode (used by CI/unit tests) ---
+# Set TESTING=1 in CI so imports don’t fail without OPENAI_API_KEY.
+app.config["TESTING"] = os.getenv("TESTING", "0") == "1"
+
 # --- Config (production-safe defaults & DB url normalization) ---
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-not-secure")
 app.config["WTF_CSRF_TIME_LIMIT"] = None  # avoid token expiry during quick tests
@@ -41,14 +51,37 @@ app.config["WTF_CSRF_TRUSTED_ORIGINS"] = [
     "ai-powered-mental-health-chatbot.onrender.com",
     "localhost",
     "127.0.0.1",
+    # Vercel production domain (your real URL)
+    "ai-powered-mental-health-chatbot-sl.vercel.app",
+    # Wildcard for Vercel preview deployment domains
+    ".vercel.app",
 ]
+
+def _choose_sqlite_uri() -> str:
+    """
+    Choose a writable SQLite URI:
+    - Prefer ./instance when writable
+    - Otherwise use /tmp/users.db (always writable in serverless)
+    """
+    try:
+        # Attempt to write a tiny probe file to ./instance
+        probe = INSTANCE_DIR / ".__wtest"
+        with open(probe, "w") as f:
+            f.write("x")
+        probe.unlink(missing_ok=True)
+        return f"sqlite:///{(INSTANCE_DIR / 'users.db').as_posix()}"
+    except Exception:
+        return "sqlite:////tmp/users.db"
 
 db_url = os.getenv("DATABASE_URL")
 if db_url and db_url.startswith("postgres://"):
     # SQLAlchemy expects "postgresql://"
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-app.config["SQLALCHEMY_DATABASE_URI"] = db_url or f"sqlite:///{(INSTANCE_DIR / 'users.db').as_posix()}"
+# Decide DB URI:
+# 1) If DATABASE_URL present -> use it.
+# 2) Else, select a writable SQLite path (./instance or /tmp).
+app.config["SQLALCHEMY_DATABASE_URI"] = db_url or _choose_sqlite_uri()
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # CSRF for all unsafe methods
@@ -108,9 +141,16 @@ def load_user(user_id):
 
 # ---------- OpenAI client ----------
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
+if not OPENAI_API_KEY and not app.config["TESTING"]:
+    # In production, we require a real key.
     raise ValueError("The OpenAI API key was not found. Set OPENAI_API_KEY in your environment.")
-client = OpenAI(api_key=OPENAI_API_KEY)
+# In tests (TESTING=1), allow client to be None. Routes must guard before use.
+client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+
+# ---------- Health ----------
+@app.get("/health")
+def health():
+    return jsonify({"ok": True})
 
 # ---------- Routes ----------
 @app.route("/")
@@ -227,6 +267,13 @@ def chatbot():
         )
         return jsonify({"reply": crisis_response, "crisis": True})
 
+    # If we don't have a client (TESTING mode), return a stub response
+    if client is None:
+        return jsonify({
+            "reply": "Test mode: OpenAI client not initialized. (Set OPENAI_API_KEY in production.)",
+            "crisis": False
+        }), 200
+
     try:
         # Modern OpenAI API call (v1.x)
         response = client.chat.completions.create(
@@ -301,5 +348,5 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
 
-    # Local development server (use Gunicorn on Render)
+    # Local development server (use Gunicorn on Render / Serverless on Vercel)
     app.run(debug=True)
