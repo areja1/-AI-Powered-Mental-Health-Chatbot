@@ -23,7 +23,9 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 INSTANCE_DIR = BASE_DIR / "instance"
-INSTANCE_DIR.mkdir(exist_ok=True)
+
+if os.getenv("VERCEL") != "1":
+    INSTANCE_DIR.mkdir(exist_ok=True)
 
 # Cookie flags (set SESSION_COOKIE_SECURE=1 in production)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
