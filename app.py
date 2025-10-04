@@ -45,8 +45,7 @@ app.config["WTF_CSRF_TRUSTED_ORIGINS"] = [
     "ai-powered-mental-health-chatbot.onrender.com",
     "localhost",
     "127.0.0.1",
-    # --- Vercel domains (add both the project domain and wildcard) ---
-    "ai-powered-mental-health-chatbot.vercel.app",
+    "ai-powered-mental-health-chatbot-sl.vercel.app",
     ".vercel.app",
 ]
 
