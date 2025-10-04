@@ -5,6 +5,12 @@ from unittest.mock import patch
 
 from app import app, db, User, bcrypt
 
+import os
+os.environ.setdefault("TESTING", "1")
+os.environ.setdefault("OPENAI_API_KEY", "dummy")
+
+from app import app, db, User, bcrypt
+
 
 class AuthChatTests(unittest.TestCase):
     """

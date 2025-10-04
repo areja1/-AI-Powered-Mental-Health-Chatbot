@@ -33,6 +33,10 @@ app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "0") == "1"
 app.config["REMEMBER_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "0") == "1"
 
+# --- Testing mode (used by CI/unit tests) ---
+# Set TESTING=1 in CI so imports don’t fail without OPENAI_API_KEY.
+app.config["TESTING"] = os.getenv("TESTING", "0") == "1"
+
 # --- Config (production-safe defaults & DB url normalization) ---
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-not-secure")
 app.config["WTF_CSRF_TIME_LIMIT"] = None  # avoid token expiry during quick tests
@@ -108,9 +112,16 @@ def load_user(user_id):
 
 # ---------- OpenAI client ----------
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
+if not OPENAI_API_KEY and not app.config["TESTING"]:
+    # In production, we require a real key.
     raise ValueError("The OpenAI API key was not found. Set OPENAI_API_KEY in your environment.")
-client = OpenAI(api_key=OPENAI_API_KEY)
+# In tests (TESTING=1), allow client to be None. Routes must guard before use.
+client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+
+# ---------- Health ----------
+@app.get("/health")
+def health():
+    return jsonify({"ok": True})
 
 # ---------- Routes ----------
 @app.route("/")
@@ -227,6 +238,13 @@ def chatbot():
         )
         return jsonify({"reply": crisis_response, "crisis": True})
 
+    # If we don't have a client (TESTING mode), return a stub response
+    if client is None:
+        return jsonify({
+            "reply": "Test mode: OpenAI client not initialized. (Set OPENAI_API_KEY in production.)",
+            "crisis": False
+        }), 200
+
     try:
         # Modern OpenAI API call (v1.x)
         response = client.chat.completions.create(
@@ -301,5 +319,5 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
 
-    # Local development server (use Gunicorn on Render)
+    # Local development server (use Gunicorn on Render / Serverless on Vercel)
     app.run(debug=True)
